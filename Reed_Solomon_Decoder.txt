@@ -1,0 +1,4 @@
+To use to decoder open the file rs_decode.
+It is there where the recieved word is set.
+Also algorithm explanation is given at the beginning of the same file.
+For now I set the message manually.

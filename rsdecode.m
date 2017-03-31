@@ -1,0 +1,214 @@
+% Project: Reed Solomon Decoding Simulation
+% Student: Ervin Kamberoski
+% Mentor : PhD Tolga Yalcin
+%
+% The process is the one used in class to solve the problem manualy.
+% The first thing was to fill the alpha array with all non zero elements
+% over the Galosian Field.
+% 
+% Alpha array size is (n+1, m), or each element is 
+% represented by m-element array of 0 and 1.
+%
+% NOTE: All the data contained in the tables and arrays are 
+% the POWERS of alpha multiplied by the x-polynomial coefficient,
+% defined left to right increasingly. Below 'A' stands for alpha 
+% primitive element.
+% 
+% -1 means that alpha^-1 => coefficient is 0;
+% Exampl: received_word =  0            1       -1          2         1
+%         x_powers      =  0            1        2          3         4
+%         polynomial    = A^0*x^0 + A^1*X^1 + A^-1*X^2 + A^2*X^3 + A^1*X^4
+%                       = 1       +  A * X  + 0 * X^2  + A^2*X^3 +  A*X^4 
+%
+% Afterwards the procedure is the same:
+%
+% 1. Compute Syndromes
+% 2. Find error locator polynomial with BM algorithm
+% 3. Find error locations from above polynomial
+% 4. Find error magnitudes with Forney algorithm 
+% 5. Correct error: c(x) = r(x) + e(x)
+%
+% The final message is shown in output if errors were detected, in the
+% other case appropriate message is displayed.
+%%
+
+global n k m t alpha syndr_p syndr_n recievedword;
+n = 7;
+k = 3;
+m = 3;
+t = 2;
+primPol = [1 1 0 1];
+
+
+alpha = zeros(n+1, m);
+syndr_p = zeros(2*t, m);
+syndr_n = zeros(1, 2*t);
+
+% Initially the recieved word is set to all -1
+% A^-1 means coefficient 0
+recievedword = ones(1, n) * -1;
+
+% Here therecieved word should be set.
+% The values are coefficients expressed as alpha powers.
+% receivedword(i) = -1  means alpha^-1 = coefficient 0
+% receivedword(i) =  0  means alpha^ 0 = coefficient 1
+% receivedword(i) =  1  means alpha^ 1  = coefficient alpha
+
+% EXAMPLE 1.
+% This is the example from lecture(A*x^0 + A*x^1 ...):
+% Poly : r(x) = A^0 + A^5*x + A^2*x^2 + A^3*X^3 + A^0*X^4 + A^3*x^5 + A^0*X^6
+%recievedword([1 2 3 4 5 6 7]) = [0 5 2 3 0 3 0];
+%display_polynomial('Recieved word       ' ,recievedword);
+
+fprintf('\n\nBelow "A" denotes the alpha.(A^-1 = 0)\n\n');
+
+% EXAMPLE 2(comment above and uncomment below to try).
+% This is Q6 from sample examples for Midterm 2 Coding Theory:
+% Poly : r(x) = A^0*x + A^0*x^2 + A^0*X^3 + A^0*X^4 + A^0*x^5
+recievedword([2 3 4 5 6]) = [0 0 0 0 0];
+display_polynomial('Recieved word       ' ,recievedword);
+
+%calculate alpha array
+mask = zeros(1, m+1);
+mask(1)= 1;
+for i = 1 : n+1
+    for j = 1 : m
+        alpha(i,j) = mask(j);
+    end
+    last = mask(m+1);
+    for j = m + 1: -1: 2
+        mask(j) = mask(j-1);
+    end
+    mask(1) = last;
+    if mask(m+1) == 1
+        for j = 1: m+1
+            mask(j) = mod(mask(j) + primPol(j), 2);
+        end
+    end
+end
+
+
+%Decoding process starts
+%Step 1: syndromes computation
+for i = 1 : 2*t
+    for j = 1 : n 
+        if recievedword(j) ~= -1
+            exp = recievedword(j) + i*(j-1) + 1;
+            while exp >= n + 1
+                exp = exp - n;
+            end
+            %display(exp)
+            for k = 1 : m
+                syndr_p(i, k) = xor(syndr_p(i, k), alpha(exp, k));
+            end
+        end
+    end
+    syndr_n(i) = getPower(syndr_p(i,:));
+end
+
+
+display_e('Syndromes           ', syndr_n);  
+
+% Step 2: Iterative BM algorithm
+% It computes the error location polynomial
+% in 2*t iterations. The process is exactly the 
+% one used in class.
+sigma = [0];
+B = [0];
+L = 0;
+
+for j = 1 : 2 * t
+    temp_syndr = -1;
+    % bm step 1
+    % Estimate the j-th syndrome
+    for i = 1 : L
+        syn_n = syndr_n(j-i);
+        sig   = sigma(i+1);
+        res   = syn_n + sig;
+        while res >= n + 1
+            res = res - n;
+        end
+        
+        if temp_syndr == -1
+            temp_syndr = res;
+        else
+            temp_syndr = sum_gf(temp_syndr, res);
+        end
+    end
+    
+    % bm step 2
+    % Calculate the discrepancy between the estimated syndrome
+    % and actual one.
+    check = syndr_n(j);
+    if temp_syndr ~= -1
+        check = sum_gf(syndr_n(j), temp_syndr);
+    end
+    
+    % bm step 3 
+    % if flag is 1 the degree of sigma increases by one
+    flag = 0;
+    if(check ~= -1 && 2*L <= j-1) 
+        flag = 1;
+    end
+        
+    %bm step 4
+    %Calculate new sigma and B values, by multiplying old ones
+    %with actual discrepancy data.
+    
+    v00 = [0];
+    v01 = [-1 check];
+    v10 = [-1];
+    
+    if flag == 1
+        inv = n - check;
+        v10 = [inv];
+    end
+    
+    v11 = [-1];
+    if flag == 1
+        v11 = [-1 -1];
+    else
+        v11 = [-1 0];
+    end
+    
+    p1 = multiply(v00, sigma);
+    p2 = multiply(v01, B);
+    p3 = multiply(v10, sigma);
+    p4 = multiply(v11, B);
+    
+    p12 = sum_poly(p1, p2);
+    p34 = sum_poly(p3, p4);
+    
+    sigma = p12;
+    B = p34;
+    
+    L1 = L;
+    %step 5 compute new L
+    L = flag * (j - L1) + (1-flag) * L1;
+end
+
+%Step 3 
+%Find error locations
+err_locations = chien(sigma);
+display_e('Error Locations     ', err_locations);
+%If no errors, return
+if length(err_locations) == 0
+    display('The code contains no errors.');
+else
+    %Step 4
+    %Find error magnitudes with forney algorithm
+    omega = multiply(syndr_n, sigma);
+    sigma_derivative = derive(sigma);
+    omega_x2t = modx2t(omega);
+    err_magntudes = forney(omega_x2t, sigma_derivative, err_locations);
+    display_e('Error Magnitudes    ', err_magntudes);
+    %Step 5
+    %Correct the errors
+    %c(x) = r(x) + e(x);
+    corrected_msg = correct_errors(err_locations, err_magntudes);
+    
+    %Finally take only symbos with x^i, i >= 2*t
+    message = getMessage(corrected_msg);
+    display_polynomial('Decoded word        ', message);
+end
+
